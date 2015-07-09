@@ -61,6 +61,10 @@ public:
 		return height;
 	}
 
+	pointer raw() {
+		return matrix.get();
+	}
+
 private:
 	size_t width, height;
 	std::unique_ptr<value_type[]> matrix;
