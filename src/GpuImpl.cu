@@ -26,7 +26,7 @@ __global__ void fivePoint(float const* input, float* output, size_t width, size_
 	}
 }
 
-size_t const width = 24, height = 24;
+size_t const width = 1024, height = 1024;
 
 int main() {
 	float* input, * output;
@@ -43,9 +43,10 @@ int main() {
 
 	timer.start();
 
-	fivePoint<<<1, blockSize>>>(input, output, width, height);
-	fivePoint<<<1, blockSize>>>(output, input, width, height);
-	fivePoint<<<1, blockSize>>>(input, output, width, height);
+	for (auto i = 0; i < 20; ++i) {
+		fivePoint<<<1, blockSize>>>(input, output, width, height);
+		fivePoint<<<1, blockSize>>>(output, input, width, height);
+	}
 
 	cudaMemcpy(data.raw(), output, sizeof(float) * width * height, cudaMemcpyDeviceToHost);
 
