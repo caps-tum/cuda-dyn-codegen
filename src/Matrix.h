@@ -78,7 +78,7 @@ private:
 	}
 
 	friend std::ostream& operator<<(std::ostream& str, this_type const& m) {
-		str << std::fixed << std::setprecision(1);
+		str << std::fixed << std::setprecision(2);
 
 		for (auto y = 0; y < m.height; ++y) {
 			for (auto x = 0; x < m.width; ++x) {
