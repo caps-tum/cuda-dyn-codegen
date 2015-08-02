@@ -4,11 +4,15 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/copy.h>
 
 #include "Matrix.h"
 #include "GpuTimer.h"
 
-__global__ void fivePoint(float const* input, float* output) {
+//__global__ void fivePoint(float const* input, float* output) {
+__global__ void fivePoint(thrust::device_ptr<float> const input, thrust::device_ptr<float> output) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t width = gridDim.x * blockDim.x;
@@ -70,7 +74,7 @@ __global__ void fivePoint(float const* input, float* output) {
 	}
 }*/
 
-__global__ void fivePoint(float const* input, float* output) {
+/*__global__ void fivePoint(float const* input, float* output) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t width = gridDim.x * blockDim.x;
@@ -81,7 +85,7 @@ __global__ void fivePoint(float const* input, float* output) {
 	size_t right = index + 1;
 	size_t top = index - width;
 	size_t bottom = index + width;
-
+*/
 	/*if (x < 1 || y < 1 || x == width - 1 || y == height - 1) {
 		output[index] = input[index];
 	}
@@ -94,19 +98,24 @@ __global__ void fivePoint(float const* input, float* output) {
 	// wie soll man das verhindern können in den randbereichen?
 	// man muss quasi die arbeit anders verteilen, und kein 1:1-mapping von x und y auf die array-indizes durchführen.
 
-}
+//}
 
 
-size_t const width = 1024, height = 1024;
+size_t const width = 16, height = 16;
 
 int main() {
-	float* input, * output;
-	cudaMalloc(&input, sizeof(float) * width * height);
-	cudaMalloc(&output, sizeof(float) * width * height);
+	//float* input, * output;
+	//cudaMalloc(&input, sizeof(float) * width * height);
+	//cudaMalloc(&output, sizeof(float) * width * height);
 
-	Matrix<float> data(width, height);
+	//std::unique_ptr<float[], decltype(&cudaFree)> inputU(input, cudaFree);
 
-	cudaMemcpy(input, data.raw(), sizeof(float) * width * height, cudaMemcpyHostToDevice);
+	thrust::device_vector<float> input(width * height), output(width * height);
+
+	//Matrix<float> data(width, height);
+
+	//cudaMemcpy(input, data.raw(), sizeof(float) * width * height, cudaMemcpyHostToDevice);
+	//thrust::copy(begin(data), end(data), begin(input));
 
 	dim3 blockSize { 32, 32, 1 };
 	dim3 gridSize { width / blockSize.x, height / blockSize.y, 1 };
@@ -116,19 +125,22 @@ int main() {
 	timer.start();
 
 	for (auto i = 0; i < 20; ++i) {
-		fivePoint_shared<<<gridSize, blockSize>>>(input, output);
-		fivePoint_shared<<<gridSize, blockSize>>>(output, input);
-		//fivePoint<<<gridSize, blockSize>>>(input, output);
-		//fivePoint<<<gridSize, blockSize>>>(output, input);
+	//	fivePoint_shared<<<gridSize, blockSize>>>(input, output);
+	//	fivePoint_shared<<<gridSize, blockSize>>>(output, input);
+		fivePoint<<<gridSize, blockSize>>>(input.data(), output.data());
+		fivePoint<<<gridSize, blockSize>>>(output.data(), input.data());
 	}
 
 	timer.stop();
 
-	cudaMemcpy(data.raw(), input, sizeof(float) * width * height, cudaMemcpyDeviceToHost);
+	//cudaMemcpy(data.raw(), input, sizeof(float) * width * height, cudaMemcpyDeviceToHost);
+	//thrust::copy(begin(input), end(input), begin(data));
 
-	std::ofstream file("file.txt");
-	file << data;
-	file.close();
+	//std::cout << data;
+
+	//std::ofstream file("file.txt");
+	//file << data;
+	//file.close();
 
 	std::cout << "\nDauer: " << timer.getDuration().count() << " us" << std::endl;
 }

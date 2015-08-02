@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
@@ -27,26 +28,50 @@ struct FivePoint : public Stencil {
 	}
 };
 
+std::array<size_t, 5> sizes { 128, 256, 512, 1024, 2048 };
+std::array<size_t, sizes.size()> results;
 
-size_t const width = 1024, height = 1024;
+size_t numIterations = 20;
 
 int main() {
-	Matrix<float> a(width, height), b(width, height);
-	
-	FivePoint stencil;
-	
-	CpuTimer t;
+	// jeweils 2x
+	for (auto k = 0; k < 2; ++k) {
+		// für alle Größen
+		for (auto s = 0; s < sizes.size(); ++s) {
+			auto size = sizes[s];
 
-	t.start();
+			Matrix<float> a(size, size), b(size, size);
 
-	for (auto i = 0; i < 20; ++i) {
-		stencil(a, b, width, height);
-		stencil(b, a, width, height);
+			FivePoint stencil;
+
+			CpuTimer t;
+
+			t.start();
+
+			for (auto i = 0; i < numIterations / 2; ++i) {
+				stencil(a, b, size, size);
+				stencil(b, a, size, size);
+			}
+
+			t.stop();
+
+			results[s] += stencilsPerSecond(size, size, t.getDuration()) / numIterations;
+		}
 	}
 
-	t.stop();
+	transform(begin(results), end(results), begin(results), [](size_t r) { return r / 2; });
 
-	cout << "Duration, 40 iterations: " << to_string(t.getDuration()) << "\n";
+	Logger csv;
+	csv.log("CpuImpl");
+	csv.log("Size", "Stencils/Second");
 
+	for (auto i = 0; i < sizes.size(); ++i) {
+		//cout << i << endl;
+		csv.log(sizes[i], results[i]);
+	}
+
+	ofstream file("data.csv");
+	csv.writeTo(file);
+	file.close();
 }
 

@@ -13,7 +13,7 @@ public:
 
 	template <typename Arg, typename... Args>
 	void log(Arg&& a, Args&&... args) {
-		data << a << "\t";
+		data << a << ";";
 		log(std::forward<Args>(args)...);
 	}
 
