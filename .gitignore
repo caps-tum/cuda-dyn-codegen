@@ -4,3 +4,6 @@
 *.ptx
 *.cubin
 *.fatbin
+build/*
+src/.cproject
+src/.project
