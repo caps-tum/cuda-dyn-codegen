@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <array>
 #include <functional>
 
 #include "Stencil.h"
@@ -16,8 +17,10 @@
 using namespace std;
 
 
-struct FivePoint : public Stencil {
-	virtual Operand& operator()(Operand const& a, Operand& b, size_t width, size_t height) override {
+struct FivePoint {
+	using Operand = Matrix<float>;
+
+	Operand& operator()(Operand const& a, Operand& b, size_t width, size_t height) {
 		for (auto y = 1; y < height - 1; ++y) {
 			for (auto x = 1; x < width - 1; ++x) {
 				b(x, y) = 1.0f / 5 * (a(x - 1, y) + a(x, y - 1) + a(x, y) + a(x + 1, y) + a(x, y + 1));
@@ -29,9 +32,9 @@ struct FivePoint : public Stencil {
 };
 
 std::array<size_t, 5> sizes { 128, 256, 512, 1024, 2048 };
-std::array<size_t, sizes.size()> results;
+std::array<size_t, 5> results;
 
-size_t numIterations = 20;
+size_t iterationsPerSize = 20;
 
 int main() {
 	// jeweils 2x
@@ -48,14 +51,14 @@ int main() {
 
 			t.start();
 
-			for (auto i = 0; i < numIterations / 2; ++i) {
+			for (auto i = 0; i < iterationsPerSize / 2; ++i) {
 				stencil(a, b, size, size);
 				stencil(b, a, size, size);
 			}
 
 			t.stop();
 
-			results[s] += stencilsPerSecond(size, size, t.getDuration()) / numIterations;
+			results[s] += stencilsPerSecond(size, size, t.getDuration()) / iterationsPerSize;
 		}
 	}
 
@@ -66,11 +69,10 @@ int main() {
 	csv.log("Size", "Stencils/Second");
 
 	for (auto i = 0; i < sizes.size(); ++i) {
-		//cout << i << endl;
 		csv.log(sizes[i], results[i]);
 	}
 
-	ofstream file("data.csv");
+	ofstream file("cpu-impl.csv");
 	csv.writeTo(file);
 	file.close();
 }

@@ -1,18 +1,19 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+#include <array>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-#include <thrust/copy.h>
 
 #include "Matrix.h"
 #include "GpuTimer.h"
+#include "Stencil.h"
+#include "Logger.h"
 
-//__global__ void fivePoint(float const* input, float* output) {
-__global__ void fivePoint(thrust::device_ptr<float> const input, thrust::device_ptr<float> output) {
+using namespace std;
+
+__global__ void fivePoint1(float const* input, float* output) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t width = gridDim.x * blockDim.x;
@@ -30,6 +31,26 @@ __global__ void fivePoint(thrust::device_ptr<float> const input, thrust::device_
 	else {
 		output[index] = 1.0f / 5 * (input[left] + input[index] + input[right] + input[top] + input[bottom]);
 	}
+}
+
+__global__ void fivePoint2(float const* input, float* output) {
+	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t y = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t width = gridDim.x * blockDim.x;
+	size_t height = gridDim.y * blockDim.y;
+	size_t index = (y + 1) * width + x + 1;
+
+	size_t left = index - 1;
+	size_t right = index + 1;
+	size_t top = index - width;
+	size_t bottom = index + width;
+
+	//if (x < 1 || y < 1 || x == width - 1 || y == height - 1) {
+	//	output[index] = input[index];
+	//}
+	//else {
+		output[index] = 1.0f / 5 * (input[left] + input[index] + input[right] + input[top] + input[bottom]);
+	//}
 }
 
 /*__global__ void fivePoint_shared(float const* input, float* output) {
@@ -100,41 +121,62 @@ __global__ void fivePoint(thrust::device_ptr<float> const input, thrust::device_
 
 //}
 
+std::array<int, 5> sizes { 128, 256, 512, 1024, 2048 };
+std::array<size_t, 5> results;
 
-size_t const width = 16, height = 16;
+size_t iterationsPerSize = 60;
 
 int main() {
-	//float* input, * output;
-	//cudaMalloc(&input, sizeof(float) * width * height);
-	//cudaMalloc(&output, sizeof(float) * width * height);
+	// jeweils 2x
+	for (auto k = 0; k < 2; ++k) {
+		// für alle Größen
+		for (auto s = 0; s < sizes.size(); ++s) {
+			auto size = sizes[s];
 
-	//std::unique_ptr<float[], decltype(&cudaFree)> inputU(input, cudaFree);
+			float* input, * output;
+			cudaMalloc(&input, sizeof(float) * size * size);
+			cudaMalloc(&output, sizeof(float) * size * size);
 
-	thrust::device_vector<float> input(width * height), output(width * height);
+			Matrix<float> data(size, size);
 
-	//Matrix<float> data(width, height);
+			cudaMemcpy(input, data.raw(), sizeof(float) * size * size, cudaMemcpyHostToDevice);
 
-	//cudaMemcpy(input, data.raw(), sizeof(float) * width * height, cudaMemcpyHostToDevice);
-	//thrust::copy(begin(data), end(data), begin(input));
+			dim3 blockSize { 32, 32, 1 };
+			dim3 gridSize { size / blockSize.x, size / blockSize.y, 1 };
 
-	dim3 blockSize { 32, 32, 1 };
-	dim3 gridSize { width / blockSize.x, height / blockSize.y, 1 };
+			GpuTimer timer;
 
-	GpuTimer timer;
+			timer.start();
 
-	timer.start();
+			for (auto i = 0; i < iterationsPerSize / 2; ++i) {
+				fivePoint1<<<gridSize, blockSize>>>(input, output);
+				fivePoint1<<<gridSize, blockSize>>>(output, input);
+			}
 
-	for (auto i = 0; i < 20; ++i) {
-	//	fivePoint_shared<<<gridSize, blockSize>>>(input, output);
-	//	fivePoint_shared<<<gridSize, blockSize>>>(output, input);
-		fivePoint<<<gridSize, blockSize>>>(input.data(), output.data());
-		fivePoint<<<gridSize, blockSize>>>(output.data(), input.data());
+			timer.stop();
+
+			results[s] += stencilsPerSecond(size, size, timer.getDuration()) / iterationsPerSize;
+
+			cudaMemcpy(data.raw(), input, sizeof(float) * size * size, cudaMemcpyDeviceToHost);
+
+			cudaFree(output);
+			cudaFree(input);
+		}
 	}
 
-	timer.stop();
+	transform(begin(results), end(results), begin(results), [](size_t r) { return r / 2; });
 
-	//cudaMemcpy(data.raw(), input, sizeof(float) * width * height, cudaMemcpyDeviceToHost);
-	//thrust::copy(begin(input), end(input), begin(data));
+	Logger csv;
+	csv.log("GpuImpl");
+	csv.log("Size", "Stencils/Second");
+
+	for (auto i = 0; i < sizes.size(); ++i) {
+		csv.log(sizes[i], results[i]);
+	}
+
+	ofstream file("gpu-impl.csv");
+	csv.writeTo(file);
+	file.close();
 
 	//std::cout << data;
 
@@ -142,6 +184,7 @@ int main() {
 	//file << data;
 	//file.close();
 
-	std::cout << "\nDauer: " << timer.getDuration().count() << " us" << std::endl;
+	//std::cout << "\nDauer: " << timer.getDuration().count() << " us" << std::endl;
+
 }
 
