@@ -16,18 +16,27 @@
 
 typedef void kernel(thrust::device_ptr<float const> const, thrust::device_ptr<float> const);
 
+template <size_t a, size_t b>
+struct is_divisible_by {
+	static bool const value = (a % b == 0);
+};
 
-__global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output) {
+
+// width und height sind die echten Maße der Matrix, mit der gearbeitet wird.
+__global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, size_t width, size_t height) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y;
-	size_t width = gridDim.x * blockDim.x;
-	size_t height = gridDim.y * blockDim.y;
+
 	size_t index = y * width + x;
 
 	size_t left = index - 1;
 	size_t right = index + 1;
 	size_t top = index - width;
 	size_t bottom = index + width;
+
+	if (x >= width || y >= height) {
+		return;
+	}
 
 	if (x < 1 || y < 1 || x == width - 1 || y == height - 1) {
 		output[index] = input[index];
@@ -37,11 +46,11 @@ __global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::
 	}
 }
 
-__global__ void fivePoint2(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output) {
+__global__ void fivePoint2(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, size_t width, size_t height) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x + 1;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y + 1;
-	size_t width = gridDim.x * blockDim.x + 2;
-	size_t height = gridDim.y * blockDim.y + 2;
+	//size_t width = gridDim.x * blockDim.x + 2;
+	//size_t height = gridDim.y * blockDim.y + 2;
 	
 	size_t index = y * width + x;
 
@@ -49,6 +58,10 @@ __global__ void fivePoint2(thrust::device_ptr<float const> const input, thrust::
 	size_t right = index + 1;
 	size_t top = index - width;
 	size_t bottom = index + width;
+
+	if (x >= width - 1 || y >= height - 1) {
+		return;
+	}
 
 	output[index] = 1.0f / 5 * (input[left] + input[index] + input[right] + input[top] + input[bottom]);
 }
@@ -86,12 +99,12 @@ __global__ void fivePoint_shared(float const* input, float* output) {
 	}
 }
 
-std::array<int, 5> sizes { 128, 256, 512, 1024, 2048 };
+std::array<int, 5> sizes { 32, 256, 512, 1024, 2048 };
 std::array<size_t, 5> results;
 
 size_t iterationsPerSize = 60;
 
-//std::array<int, 1> sizes { 32 };
+//std::array<int, 1> sizes { 35 };
 //std::array<size_t, 1> results;
 
 //size_t iterationsPerSize = 2;
@@ -111,15 +124,15 @@ void test1() {
 			thrust::copy_n(data.raw(), size * size, input);
 
 			dim3 blockSize { 16, 16, 1 };
-			dim3 gridSize { size / blockSize.x, size / blockSize.y, 1 };
+			dim3 gridSize { (size + blockSize.x - 1) / blockSize.x, (size + blockSize.y - 1) / blockSize.y, 1 };
 
 			GpuTimer timer;
 
 			timer.start();
 
-			for (auto i = 0; i < iterationsPerSize / 2; ++i) {
-				fivePoint1<<<gridSize, blockSize>>>(input, output);
-				fivePoint1<<<gridSize, blockSize>>>(output, input);
+			for (auto i = 0; i < iterationsPerSize; ++i) {
+				fivePoint1<<<gridSize, blockSize>>>(input, output, size, size);
+				thrust::swap(input, output);
 			}
 
 			timer.stop();
@@ -172,15 +185,15 @@ void test2() {
 			thrust::copy_n(data.raw(), size * size, output);
 
 			dim3 blockSize { 16, 16, 1 };
-			dim3 gridSize { (size - 2) / blockSize.x, (size - 2) / blockSize.y, 1 };
+			dim3 gridSize { (size + blockSize.x - 1 - 2) / blockSize.x, (size + blockSize.y - 1 - 2) / blockSize.y, 1 };
 
 			GpuTimer timer;
 
 			timer.start();
 
-			for (auto i = 0; i < iterationsPerSize / 2; ++i) {
-				fivePoint2<<<gridSize, blockSize>>>(input, output);
-				fivePoint2<<<gridSize, blockSize>>>(output, input);
+			for (auto i = 0; i < iterationsPerSize; ++i) {
+				fivePoint2<<<gridSize, blockSize>>>(input, output, size, size);
+				thrust::swap(input, output);
 			}
 
 			timer.stop();
@@ -189,7 +202,7 @@ void test2() {
 
 			thrust::copy_n(input, size * size, data.raw());
 
-			if (size == 128 + 2) {
+			if (size == 35 + 2) {
 				std::ofstream file("data.txt");
 				file << data;
 				file.close();
@@ -216,7 +229,7 @@ void test2() {
 }
 
 int main() {
-	//test1();
-	test2();
+	test1();
+	//test2();
 }
 
