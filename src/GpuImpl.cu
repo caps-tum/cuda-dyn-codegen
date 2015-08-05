@@ -5,15 +5,16 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <thrust/device_ptr.h>
+#include <thrust/device_new.h>
+#include <thrust/device_delete.h>
 
 #include "Matrix.h"
 #include "GpuTimer.h"
 #include "Stencil.h"
 #include "Logger.h"
 
-using namespace std;
-
-__global__ void fivePoint1(float const* input, float* output) {
+__global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t width = gridDim.x * blockDim.x;
@@ -36,7 +37,7 @@ __global__ void fivePoint1(float const* input, float* output) {
 __global__ void fivePoint2(float const* input, float* output) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x + 1;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y + 1;
-	size_t width = gridDim.x * blockDim.x + 2;
+	size_t width = gridDim.x * blockDim.x;
 	size_t height = gridDim.y * blockDim.y;
 	
 	size_t index = y * width + x;
@@ -93,14 +94,13 @@ void test1() {
 		// für alle Größen
 		for (auto s = 0; s < sizes.size(); ++s) {
 			auto size = sizes[s];
-
-			float* input, *output;
-			cudaMalloc(&input, sizeof(float) * size * size);
-			cudaMalloc(&output, sizeof(float) * size * size);
+			
+			auto input = thrust::device_new<float>(size * size);
+			auto output = thrust::device_new<float>(size * size);
 
 			Matrix<float> data(size, size);
 
-			cudaMemcpy(input, data.raw(), sizeof(float) * size * size, cudaMemcpyHostToDevice);
+			thrust::copy_n(data.raw(), size * size, input);
 
 			dim3 blockSize { 32, 32, 1 };
 			dim3 gridSize { size / blockSize.x, size / blockSize.y, 1 };
@@ -110,22 +110,22 @@ void test1() {
 			timer.start();
 
 			for (auto i = 0; i < iterationsPerSize / 2; ++i) {
-				fivePoint1<<<gridSize, blockSize>>>(input, output);
-				fivePoint1<<<gridSize, blockSize>>>(output, input);
+				fivePoint1<<<gridSize, blockSize>>>(thrust::device_ptr<float const>(input), thrust::device_ptr<float>(output));
+				fivePoint1<<<gridSize, blockSize>>>(thrust::device_ptr<float const>(output), thrust::device_ptr<float>(input));
 			}
 
 			timer.stop();
 
 			results[s] += stencilsPerSecond(size, size, timer.getDuration()) / iterationsPerSize;
 
-			cudaMemcpy(data.raw(), input, sizeof(float) * size * size, cudaMemcpyDeviceToHost);
+			thrust::copy_n(input, size * size, data.raw());
 
-			cudaFree(output);
-			cudaFree(input);
+			thrust::device_delete(output, size * size);
+			thrust::device_delete(input, size * size);			
 		}
 	}
 
-	transform(begin(results), end(results), begin(results), [](size_t r) { return r / 2; });
+	std::transform(std::begin(results), std::end(results), std::begin(results), [](size_t r) { return r / 2; });
 
 	Logger csv;
 	csv.log("GpuImpl1");
@@ -135,13 +135,13 @@ void test1() {
 		csv.log(sizes[i], results[i]);
 	}
 
-	ofstream file("gpu-impl1.csv");
+	std::ofstream file("gpu-impl1.csv");
 	csv.writeTo(file);
 	file.close();
 }
 
 void test2() {
-	fill(begin(results), end(results), 0);
+	std::fill(std::begin(results), std::end(results), 0);
 
 	// jeweils 2x
 	for (auto k = 0; k < 2; ++k) {
@@ -180,7 +180,7 @@ void test2() {
 		}
 	}
 
-	transform(begin(results), end(results), begin(results), [](size_t r) { return r / 2; });
+	std::transform(std::begin(results), std::end(results), std::begin(results), [](size_t r) { return r / 2; });
 
 	Logger csv;
 	csv.log("GpuImpl2");
@@ -190,7 +190,7 @@ void test2() {
 		csv.log(sizes[i], results[i]);
 	}
 
-	ofstream file("gpu-impl2.csv");
+	std::ofstream file("gpu-impl2.csv");
 	csv.writeTo(file);
 	file.close();
 }
