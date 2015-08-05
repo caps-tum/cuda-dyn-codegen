@@ -14,6 +14,9 @@
 #include "Stencil.h"
 #include "Logger.h"
 
+typedef void kernel(thrust::device_ptr<float const> const, thrust::device_ptr<float> const);
+
+
 __global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -34,11 +37,11 @@ __global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::
 	}
 }
 
-__global__ void fivePoint2(float const* input, float* output) {
+__global__ void fivePoint2(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x + 1;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y + 1;
-	size_t width = gridDim.x * blockDim.x;
-	size_t height = gridDim.y * blockDim.y;
+	size_t width = gridDim.x * blockDim.x + 2;
+	size_t height = gridDim.y * blockDim.y + 2;
 	
 	size_t index = y * width + x;
 
@@ -88,6 +91,11 @@ std::array<size_t, 5> results;
 
 size_t iterationsPerSize = 60;
 
+//std::array<int, 1> sizes { 32 };
+//std::array<size_t, 1> results;
+
+//size_t iterationsPerSize = 2;
+
 void test1() {
 	// jeweils 2x
 	for (auto k = 0; k < 2; ++k) {
@@ -102,7 +110,7 @@ void test1() {
 
 			thrust::copy_n(data.raw(), size * size, input);
 
-			dim3 blockSize { 32, 32, 1 };
+			dim3 blockSize { 16, 16, 1 };
 			dim3 gridSize { size / blockSize.x, size / blockSize.y, 1 };
 
 			GpuTimer timer;
@@ -110,8 +118,8 @@ void test1() {
 			timer.start();
 
 			for (auto i = 0; i < iterationsPerSize / 2; ++i) {
-				fivePoint1<<<gridSize, blockSize>>>(thrust::device_ptr<float const>(input), thrust::device_ptr<float>(output));
-				fivePoint1<<<gridSize, blockSize>>>(thrust::device_ptr<float const>(output), thrust::device_ptr<float>(input));
+				fivePoint1<<<gridSize, blockSize>>>(input, output);
+				fivePoint1<<<gridSize, blockSize>>>(output, input);
 			}
 
 			timer.stop();
@@ -119,6 +127,12 @@ void test1() {
 			results[s] += stencilsPerSecond(size, size, timer.getDuration()) / iterationsPerSize;
 
 			thrust::copy_n(input, size * size, data.raw());
+
+			if (size == 128) {
+				std::ofstream file("data.txt");
+				file << data;
+				file.close();
+			}
 
 			thrust::device_delete(output, size * size);
 			thrust::device_delete(input, size * size);			
@@ -149,15 +163,15 @@ void test2() {
 		for (auto s = 0; s < sizes.size(); ++s) {
 			auto size = sizes[s] + 2;
 
-			float* input, *output;
-			cudaMalloc(&input, sizeof(float) * size * size);
-			cudaMalloc(&output, sizeof(float) * size * size);
+			auto input = thrust::device_new<float>(size * size);
+			auto output = thrust::device_new<float>(size * size);
 
 			Matrix<float> data(size, size);
 
-			cudaMemcpy(input, data.raw(), sizeof(float) * size * size, cudaMemcpyHostToDevice);
+			thrust::copy_n(data.raw(), size * size, input);
+			thrust::copy_n(data.raw(), size * size, output);
 
-			dim3 blockSize { 32, 32, 1 };
+			dim3 blockSize { 16, 16, 1 };
 			dim3 gridSize { (size - 2) / blockSize.x, (size - 2) / blockSize.y, 1 };
 
 			GpuTimer timer;
@@ -173,10 +187,16 @@ void test2() {
 
 			results[s] += stencilsPerSecond(size, size, timer.getDuration()) / iterationsPerSize;
 
-			cudaMemcpy(data.raw(), input, sizeof(float) * size * size, cudaMemcpyDeviceToHost);
+			thrust::copy_n(input, size * size, data.raw());
 
-			cudaFree(output);
-			cudaFree(input);
+			if (size == 128 + 2) {
+				std::ofstream file("data.txt");
+				file << data;
+				file.close();
+			}
+
+			thrust::device_delete(output, size * size);
+			thrust::device_delete(input, size * size);
 		}
 	}
 
@@ -196,7 +216,7 @@ void test2() {
 }
 
 int main() {
-	test1();
+	//test1();
 	test2();
 }
 
