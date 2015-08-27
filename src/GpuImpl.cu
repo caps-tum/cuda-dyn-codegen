@@ -14,15 +14,6 @@
 #include "Stencil.h"
 #include "Logger.h"
 
-typedef void kernel(thrust::device_ptr<float const> const, thrust::device_ptr<float> const);
-
-template <size_t a, size_t b>
-struct is_divisible_by {
-	static bool const value = (a % b == 0);
-};
-
-
-// width und height sind die echten Maße der Matrix, mit der gearbeitet wird.
 __global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, size_t width, size_t height) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -42,7 +33,7 @@ __global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::
 		output[index] = input[index];
 	}
 	else {
-		output[index] = 1.0f / 5 * (input[left] + input[index] + input[right] + input[top] + input[bottom]);
+		output[index] = 1.0f / 5 * (input[top] + input[left] + input[index] + input[right] + input[bottom]);
 	}
 }
 
@@ -63,7 +54,11 @@ __global__ void fivePoint2(thrust::device_ptr<float const> const input, thrust::
 		return;
 	}
 
-	output[index] = 1.0f / 5 * (input[left] + input[index] + input[right] + input[top] + input[bottom]);
+	//output[index] = 1.0f / 5 * (input[left] + input[index] + input[right]+ input[top] + input[bottom]);
+	// Wenn man die Zeile oben stattdessen so umsortiert, dass die zu addierenden Elemente in der Reihenfolge
+	// aufsteigender Speicheradressen im Term auftauchen, gibt es einen großen Geschwindigkeitsschub.
+	// 1380000 -> 1630000.
+	output[index] = 1.0f / 5 * (input[top] + input[left] + input[index] + input[right] + input[bottom]);
 }
 
 __global__ void fivePoint3(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, size_t global_width, size_t global_height) {
@@ -109,23 +104,81 @@ __global__ void fivePoint3(thrust::device_ptr<float const> const input, thrust::
 	if (threadIdx.y == buffer_height - 3) {
 		buffer[buffer_bottom] = input[global_bottom];
 	}
-
 	__syncthreads();
 
+	// Wenn man hier umsortiert, bringt das komischerweise gar nichts.
+	// Allerdings ist er schneller, wenn man stattdessen die Variante mit dem 2d-Array benutzt, vielleicht kann er
+	// dann besser optimieren.
 	output[global_index] = 1.0f / 5 * (buffer[buffer_left] + buffer[buffer_index] + buffer[buffer_right] + buffer[buffer_top] + buffer[buffer_bottom]);
 }
 
-std::array<int, 5> sizes { 32, 256, 512, 1024, 2048 };
+
+__global__ void fivePoint3_2(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, size_t global_width, size_t global_height) {
+	size_t global_x = blockIdx.x * blockDim.x + threadIdx.x + 1;
+	size_t global_y = blockIdx.y * blockDim.y + threadIdx.y + 1;
+
+	size_t global_index = global_y * global_width + global_x;
+
+	size_t global_left = global_index - 1;
+	size_t global_right = global_index + 1;
+	size_t global_top = global_index - global_width;
+	size_t global_bottom = global_index + global_width;
+
+	__shared__ float buffer[18][18];
+
+	size_t buffer_x = threadIdx.x + 1;
+	size_t buffer_y = threadIdx.y + 1;
+
+	size_t buffer_width = 18;
+	size_t buffer_height = 18;
+
+	int buffer_index = buffer_y * buffer_width + buffer_x;
+
+	size_t buffer_left = buffer_index - 1;
+	size_t buffer_right = buffer_index + 1;
+	size_t buffer_top = buffer_index - buffer_width;
+	size_t buffer_bottom = buffer_index + buffer_width;
+
+	if (threadIdx.x == 0) {
+	buffer[0][buffer_y] = input[global_left];
+	}
+
+	if (threadIdx.x == buffer_width - 3) {
+	buffer[buffer_width - 1][buffer_y] = input[global_right];
+	}
+
+	if (threadIdx.y == 0) {
+	buffer[buffer_x][0] = input[global_top];
+	}
+
+	if (threadIdx.y == buffer_height - 3) {
+	buffer[buffer_x][buffer_height - 1] = input[global_bottom];
+	}
+
+	buffer[buffer_x][buffer_y] = input[global_index];
+
+	__syncthreads();
+
+	// Wenn man hier umsortiert, bringt das komischerweise gar nichts.
+	// Allerdings ist er schneller, wenn man stattdessen die Variante mit dem 2d-Array benutzt, vielleicht kann er
+	// dann besser optimieren.
+	output[global_index] = 1.0f / 5 * (buffer[buffer_x][buffer_y - 1] + buffer[buffer_x - 1][buffer_y] + buffer[buffer_x][buffer_y] + buffer[buffer_x + 1][buffer_y] + buffer[buffer_x][buffer_y + 1]);
+}
+
+std::array<int, 5> sizes { 512 + 2, 1024 + 2, 2048 + 2, 4096 + 2, 8192 + 2 };
 std::array<size_t, 5> results;
 
 size_t iterationsPerSize = 60;
 
-//std::array<int, 1> sizes { 1024 };
+//std::array<int, 1> sizes { 32 + 2 };
 //std::array<size_t, 1> results;
 
-//size_t iterationsPerSize = 60;
+//size_t iterationsPerSize = 3;
+
 
 void test1() {
+	std::fill(std::begin(results), std::end(results), 0);
+
 	// jeweils 2x
 	for (auto k = 0; k < 2; ++k) {
 		// für alle Größen
@@ -162,7 +215,7 @@ void test1() {
 				file << data;
 				file.close();
 			}
-
+			
 			thrust::device_delete(output, size * size);
 			thrust::device_delete(input, size * size);			
 		}
@@ -190,7 +243,7 @@ void test2() {
 	for (auto k = 0; k < 2; ++k) {
 		// für alle Größen
 		for (auto s = 0; s < sizes.size(); ++s) {
-			auto size = sizes[s] + 2;
+			auto size = sizes[s];
 
 			auto input = thrust::device_new<float>(size * size);
 			auto output = thrust::device_new<float>(size * size);
@@ -218,11 +271,11 @@ void test2() {
 
 			thrust::copy_n(input, size * size, data.raw());
 
-			if (size == 35 + 2) {
+			/*if (size == 35 + 2) {
 				std::ofstream file("data.txt");
 				file << data;
 				file.close();
-			}
+			}*/
 
 			thrust::device_delete(output, size * size);
 			thrust::device_delete(input, size * size);
@@ -251,7 +304,7 @@ void test3() {
 	for (auto k = 0; k < 2; ++k) {
 		// für alle Größen
 		for (auto s = 0; s < sizes.size(); ++s) {
-			auto size = sizes[s] + 2;
+			auto size = sizes[s];
 
 			auto input = thrust::device_new<float>(size * size);
 			auto output = thrust::device_new<float>(size * size);
@@ -269,7 +322,8 @@ void test3() {
 			timer.start();
 
 			for (auto i = 0; i < iterationsPerSize; ++i) {
-				fivePoint3<<<gridSize, blockSize, sizeof(float) * 18 * 18>>>(input, output, size, size);
+				//fivePoint3<<<gridSize, blockSize, sizeof(float) * 18 * 18>>>(input, output, size, size);
+				fivePoint3_2 << <gridSize, blockSize>> >(input, output, size, size);
 				thrust::swap(input, output);
 			}
 
@@ -305,9 +359,10 @@ void test3() {
 	file.close();
 }
 
-int main() {
-	//test1();
-	//test2();
+int main(int argc, char* argv[]) {
+	test2();
+	test1();
 	test3();
-}
 
+	std::cin.ignore();
+}

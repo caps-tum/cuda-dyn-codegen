@@ -31,8 +31,8 @@ struct FivePoint {
 	}
 };
 
-std::array<size_t, 5> sizes { 128, 256, 512, 1024, 2048 };
-std::array<size_t, 5> results;
+std::array<size_t, 8> sizes { 128, 256, 512, 1024, 2048, 4096, 8192, 16384 }; // , 32768, 65536 };
+std::array<size_t, 8> results;
 
 size_t iterationsPerSize = 20;
 
