@@ -13,6 +13,6 @@ set(program_options_SOURCES
     src/variables_map.cpp
 )
 
-include_directories($<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 cuda_add_library(program_options STATIC ${program_options_SOURCES})
