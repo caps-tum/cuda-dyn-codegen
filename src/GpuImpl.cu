@@ -9,10 +9,14 @@
 #include <thrust/device_new.h>
 #include <thrust/device_delete.h>
 
+#include <boost/program_options.hpp>
+
 #include "Matrix.h"
 #include "GpuTimer.h"
 #include "Stencil.h"
 #include "Logger.h"
+
+namespace po = boost::program_options;
 
 __global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, size_t width, size_t height) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -360,9 +364,21 @@ void test3() {
 }
 
 int main(int argc, char* argv[]) {
-	test2();
-	test1();
-	test3();
+	//test2();
+	//test1();
+	//test3();
+
+	po::options_description desc("Allowed options");
+
+	desc.add_options()
+		("help", "produce help message")
+		("kernel", po::value<int>(), "set the kernel version to use")
+		;
+
+	po::variables_map vm;
+	po::store(po::parse_command_line(argc, argv, desc), vm);
+	po::notify(vm);
+
 
 	std::cin.ignore();
 }
