@@ -33,6 +33,14 @@ public:
 		}
 	}
 
+	Matrix(Matrix&& m)
+		: width { 0 }
+		, height { 0 }
+		, matrix { nullptr }
+	{
+		std::swap(*this, m);
+	}
+
 	reference operator()(size_t x, size_t y) {
 #ifdef _DEBUG
 		if (x >= width || y >= height) {
@@ -89,6 +97,12 @@ private:
 		}
 
 		return str;
+	}
+
+	friend void swap(Matrix<T>& a, Matrix<T>& b) {
+		std::swap(a.width, b.width);
+		std::swap(a.height, b.height);
+		std::swap(a.matrix, b.matrix);
 	}
 };
 

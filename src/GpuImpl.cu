@@ -8,6 +8,7 @@
 #include <thrust/device_ptr.h>
 #include <thrust/device_new.h>
 #include <thrust/device_delete.h>
+#include <thrust/device_vector.h>
 
 #include <boost/program_options.hpp>
 
@@ -15,8 +16,7 @@
 #include "GpuTimer.h"
 #include "Stencil.h"
 #include "Logger.h"
-
-namespace po = boost::program_options;
+#include "Test.h"
 
 __global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, size_t width, size_t height) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -44,9 +44,7 @@ __global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::
 __global__ void fivePoint2(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, size_t width, size_t height) {
 	size_t x = blockIdx.x * blockDim.x + threadIdx.x + 1;
 	size_t y = blockIdx.y * blockDim.y + threadIdx.y + 1;
-	//size_t width = gridDim.x * blockDim.x + 2;
-	//size_t height = gridDim.y * blockDim.y + 2;
-	
+
 	size_t index = y * width + x;
 
 	size_t left = index - 1;
@@ -58,10 +56,6 @@ __global__ void fivePoint2(thrust::device_ptr<float const> const input, thrust::
 		return;
 	}
 
-	//output[index] = 1.0f / 5 * (input[left] + input[index] + input[right]+ input[top] + input[bottom]);
-	// Wenn man die Zeile oben stattdessen so umsortiert, dass die zu addierenden Elemente in der Reihenfolge
-	// aufsteigender Speicheradressen im Term auftauchen, gibt es einen großen Geschwindigkeitsschub.
-	// 1380000 -> 1630000.
 	output[index] = 1.0f / 5 * (input[top] + input[left] + input[index] + input[right] + input[bottom]);
 }
 
@@ -110,10 +104,7 @@ __global__ void fivePoint3(thrust::device_ptr<float const> const input, thrust::
 	}
 	__syncthreads();
 
-	// Wenn man hier umsortiert, bringt das komischerweise gar nichts.
-	// Allerdings ist er schneller, wenn man stattdessen die Variante mit dem 2d-Array benutzt, vielleicht kann er
-	// dann besser optimieren.
-	output[global_index] = 1.0f / 5 * (buffer[buffer_left] + buffer[buffer_index] + buffer[buffer_right] + buffer[buffer_top] + buffer[buffer_bottom]);
+	output[global_index] = 1.0f / 5 * (buffer[buffer_top] + buffer[buffer_left] + buffer[buffer_index] + buffer[buffer_right] + buffer[buffer_bottom]);
 }
 
 
@@ -163,11 +154,34 @@ __global__ void fivePoint3_2(thrust::device_ptr<float const> const input, thrust
 
 	__syncthreads();
 
-	// Wenn man hier umsortiert, bringt das komischerweise gar nichts.
-	// Allerdings ist er schneller, wenn man stattdessen die Variante mit dem 2d-Array benutzt, vielleicht kann er
-	// dann besser optimieren.
 	output[global_index] = 1.0f / 5 * (buffer[buffer_x][buffer_y - 1] + buffer[buffer_x - 1][buffer_y] + buffer[buffer_x][buffer_y] + buffer[buffer_x + 1][buffer_y] + buffer[buffer_x][buffer_y + 1]);
 }
+
+
+__global__ void ninePoint1(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, size_t width, size_t height, thrust::device_ptr<int const> const weights) {
+	size_t x = blockIdx.x * blockDim.x + threadIdx.x + 2;
+	size_t y = blockIdx.y * blockDim.y + threadIdx.y + 2;
+
+	size_t index = y * width + x;
+
+	if (x >= width - 2 || y >= height - 2) {
+		return;
+	}
+
+	output[index] = 1.0f / 9 * (
+		weights[0 * 5 + 2] * input[index - width - width] +
+		weights[1 * 5 + 2] * input[index - width] +
+		weights[2 * 5 + 0] * input[index - 1 - 1] +
+		weights[2 * 5 + 1] * input[index - 1] +
+		weights[2 * 5 + 2] * input[index] +
+		weights[2 * 5 + 3] * input[index + 1] +
+		weights[2 * 5 + 4] * input[index + 1 + 1] +
+		weights[3 * 5 + 2] * input[index + width] +
+		weights[4 * 5 + 2] * input[index + width + width]
+	);
+}
+
+
 
 std::array<int, 5> sizes { 512 + 2, 1024 + 2, 2048 + 2, 4096 + 2, 8192 + 2 };
 std::array<size_t, 5> results;
@@ -178,6 +192,8 @@ size_t iterationsPerSize = 60;
 //std::array<size_t, 1> results;
 
 //size_t iterationsPerSize = 3;
+
+
 
 
 void test1() {
@@ -363,22 +379,125 @@ void test3() {
 	file.close();
 }
 
+void runCpu(boost::program_options::variables_map const& vm) {
+
+}
+
+void runGpu(boost::program_options::variables_map const& vm) {
+	switch (vm["kernel"].as<int>()) {
+	case 6: {
+		auto result = 0;
+		auto size = 32 + 4;
+		auto input = thrust::device_new<float>(size * size);
+		auto output = thrust::device_new<float>(size * size);
+
+		Matrix<float> data(size, size);
+
+		thrust::copy_n(data.raw(), size * size, input);
+		thrust::copy_n(data.raw(), size * size, output);
+
+		dim3 blockSize { 16, 16, 1 };
+		dim3 gridSize { (size + blockSize.x - 1 - 4) / blockSize.x, (size + blockSize.y - 1 - 4) / blockSize.y, 1 };
+
+		GpuTimer timer;
+
+		timer.start();
+
+		thrust::device_vector<int> weights = std::vector<int> {
+			 0, 0, 1, 0, 0,
+			 0, 0, 1, 0, 0,
+			 1, 1, 1, 1, 1,
+			 0, 0, 1, 0, 0,
+			 0, 0, 1, 0, 0
+		};	
+		
+
+		for (auto i = 0; i < iterationsPerSize; ++i) {
+			//fivePoint3<<<gridSize, blockSize, sizeof(float) * 18 * 18>>>(input, output, size, size);
+			ninePoint1 << <gridSize, blockSize >> >(input, output, size, size, weights.data());
+			thrust::swap(input, output);
+		}
+
+		timer.stop();
+
+		result += stencilsPerSecond(size, size, timer.getDuration()) / iterationsPerSize;
+
+		thrust::copy_n(input, size * size, data.raw());
+
+		std::cout << result;
+
+		if (size == 32 + 4) {
+			std::ofstream file("data.txt");
+			file << data;
+			file.close();
+		}
+
+		thrust::device_delete(output, size * size);
+		thrust::device_delete(input, size * size);
+	}
+	default:
+		break;
+	}
+}
+
+
+void parseParameters(int argc, char* argv[]) {
+	namespace po = boost::program_options;
+
+	po::options_description general("General Options");
+
+	std::string type;
+
+	general.add_options()
+		("type", po::value<std::string>(&type), "\"cpu\" or \"gpu\"")
+		("width", po::value<size_t>()->default_value(1024), "width of the matrix")
+		("height", po::value<size_t>()->default_value(1024), "height of the matrix")
+		("numIterations", po::value<size_t>()->default_value(50), "number of iterations to calculate")
+		("output", po::value<std::string>()->default_value("output.csv"), "name of the output file")
+	;
+
+	po::options_description gpu("GPU Options");
+
+	gpu.add_options()
+		("kernel", po::value<int>()->default_value(1), "version of the kernel to use")
+	;
+
+	po::options_description all("Usage");
+
+	all.add(general).add(gpu);
+
+	po::variables_map vm;
+	po::store(po::parse_command_line(argc, argv, all), vm);
+	po::notify(vm);
+
+	if (type == "cpu") {
+		runCpu(vm);
+	}
+	else if (type == "gpu") {
+		runGpu(vm);
+	}
+	else {
+		std::cout << "Error: --type must be set to either cpu or gpu.\n\n";
+		std::cout << all << std::endl;
+		//return 0;
+	}
+}
+
+
+using NormalTest = Test<size_t, size_t>;
+
+
 int main(int argc, char* argv[]) {
 	//test2();
 	//test1();
 	//test3();
 
-	po::options_description desc("Allowed options");
 
-	desc.add_options()
-		("help", "produce help message")
-		("kernel", po::value<int>(), "set the kernel version to use")
-		;
+	//NormalTest t1(fivePoint1, dim3(258, 258), dim3(16, 16), 1);
+	//t1.run(258, 258);
 
-	po::variables_map vm;
-	po::store(po::parse_command_line(argc, argv, desc), vm);
-	po::notify(vm);
+	parseParameters(argc, argv);
 
-
+	std::cout << "so";
 	std::cin.ignore();
 }

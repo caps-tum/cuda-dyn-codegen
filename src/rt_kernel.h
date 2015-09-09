@@ -1,0 +1,26 @@
+#pragma once
+
+char ninePoint1_src[] =
+"extern \"C\" __global__ void ninePoint1(float const* input, float* output, int width, int height) { \n"
+"	size_t x = blockIdx.x * blockDim.x + threadIdx.x + 2; \n"
+"	size_t y = blockIdx.y * blockDim.y + threadIdx.y + 2; \n"
+"\n"
+"	size_t index = y * width + x; \n"
+"\n"
+"	if (x >= width - 2 || y >= height - 2) { \n"
+"		return; \n"
+"	} \n"
+"\n"
+"	output[index] = 1.0f / 9 * ( \n"
+"		%d * input[index - width - width] + \n"
+"		%d * input[index - width] + \n"
+"		%d * input[index - 1 - 1] + \n"
+"		%d * input[index - 1] + \n"
+"		%d * input[index] + \n"
+"		%d * input[index + 1] + \n"
+"		%d * input[index + 1 + 1] + \n"
+"		%d * input[index + width] + \n"
+"		%d * input[index + width + width] \n"
+"	); \n"
+"} \n"
+;

@@ -6,98 +6,114 @@
 #include <nvrtc.h>
 
 #include "Cuda.h"
+#include "CudaCall.h"
 #include "GpuTimer.h"
 
-char const* source =
-"extern \"C\" __global__ void inc(float const* input, float* output) {"
-"       output[threadIdx.y * blockDim.y + threadIdx.x] = input[threadIdx.y * blockDim.y + threadIdx.x] + 1;"
-"}"
-;
+#include <fstream>
 
-void call(nvrtcResult result) {
-	if (result != NVRTC_SUCCESS) {
-		std::cerr << "\nerror: " << result << " failed with error "
-			<< nvrtcGetErrorString(result) << '\n';
-		exit(1);
-	}
-}
+#include <thrust/device_ptr.h>
+#include <thrust/device_new.h>
+#include <thrust/device_delete.h>
 
-void call(CUresult result) {
-	if (result != CUDA_SUCCESS) {
-		const char *msg;
-		cuGetErrorName(result, &msg);
-		std::cerr << "\nerror: " << result << " failed with error "
-			<< msg << '\n';
-		exit(1);
-	}
-}
+#include "Matrix.h"
+#include "Stencil.h"
+#include "Logger.h"
+#include "Test.h"
+
+#include "rt_kernel.h"
 
 
-Cuda cuda;
-
-struct Kernel {
-        CUfunction kernel;
-
-        void launch(dim3 gridSize, dim3 blockSize, CUdeviceptr in, CUdeviceptr out) {
-                void* args[] = { &in, &out };
-
-                call(cuLaunchKernel(kernel, gridSize.x, gridSize.y, gridSize.z, blockSize.x, blockSize.y, blockSize.z, 0, nullptr, args, 0));
-        }
-};
-
+auto iterationsPerSize = 50;
 
 int main() {
+
+	auto src = std::make_unique<char[]>(sizeof(ninePoint1_src) + 100);
+	sprintf(src.get(), ninePoint1_src, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+
 	GpuTimer timer;
 
 	timer.start();
+	
+    nvrtcProgram prog;
+	nvrtcCreateProgram(&prog, src.get(), "source.cu", 0, nullptr, nullptr);
 
-        nvrtcProgram prog;
-        nvrtcCreateProgram(&prog, source, "source.cu", 0, nullptr, nullptr);
+    nvrtcCompileProgram(prog, 0, nullptr);
 
-        nvrtcCompileProgram(prog, 0, nullptr);
+    size_t logSize;
+    nvrtcGetProgramLogSize(prog, &logSize);
 
-        //size_t logSize;
-        //nvrtcGetProgramLogSize(prog, &logSize);
+	auto log = std::make_unique<char[]>(logSize);
 
-        //char log[logSize];
+    nvrtcGetProgramLog(prog, log.get());
 
-        //nvrtcGetProgramLog(prog, log);
+    std::cout << "\n\nLOG:\n" << "====\n" << log.get() << std::endl;
 
-        //std::cout << "\n\nLOG:\n" << "====\n" << log << std::endl;
+    size_t ptxSize;
+    nvrtcGetPTXSize(prog, &ptxSize);
 
-        size_t ptxSize;
-        nvrtcGetPTXSize(prog, &ptxSize);
+	auto ptx = std::make_unique<char[]>(ptxSize);
 
-        char ptx[ptxSize];
+    call(nvrtcGetPTX(prog, ptx.get()));
 
-        call(nvrtcGetPTX(prog, ptx));
+    nvrtcDestroyProgram(&prog);
 
-        nvrtcDestroyProgram(&prog);
+    CUmodule module;
+    call(cuModuleLoadDataEx(&module, ptx.get(), 0, 0, 0));
 
-        CUmodule module;
-        call(cuModuleLoadDataEx(&module, ptx, 0, 0, 0));
+    CUfunction kernel;
+    call(cuModuleGetFunction(&kernel, module, "ninePoint1"));
 
-        CUfunction kernel;
-        call(cuModuleGetFunction(&kernel, module, "inc"));
+	auto result = 0;
+	int size = 32 + 4;
+	auto input = thrust::device_new<float>(size * size);
+	auto output = thrust::device_new<float>(size * size);
+		
+	Matrix<float> data(size, size);
 
-        CUdeviceptr data;
-        cuMemAlloc(&data, 5 * 5 * sizeof(float));
+	thrust::copy_n(data.raw(), size * size, input);
+	thrust::copy_n(data.raw(), size * size, output);
 
-        Kernel k = { kernel };
-        k.launch(dim3(1, 1, 1), dim3(5, 5, 1), data, data);
+	dim3 blockSize { 16, 16, 1 };
+	dim3 gridSize { (size + blockSize.x - 1 - 4) / blockSize.x, (size + blockSize.y - 1 - 4) / blockSize.y, 1 };
 
-        call(cuCtxSynchronize());
+	//GpuTimer timer;
 
-        float* dataH = new float[5 * 5];
+	//timer.start();
 
-        call(cuMemcpyDtoH(dataH, data, 5 * 5 * sizeof(float)));
+	/*thrust::device_vector<int> weights = std::vector<int> {
+		0, 0, 1, 0, 0,
+		0, 0, 1, 0, 0,
+		1, 1, 1, 1, 1,
+		0, 0, 1, 0, 0,
+		0, 0, 1, 0, 0
+		};*/
+
+	auto ip = input.get();
+	auto op = output.get();
+			
+	// Wieso geht das, wenn size ein int ist, aber nicht, wenn es ein size_t ist?
+	void* args[] = { &ip, &op, &size, &size };
+
+	for (auto i = 0; i < iterationsPerSize; ++i) {
+		call(cuLaunchKernel(kernel, gridSize.x, gridSize.y, gridSize.z, blockSize.x, blockSize.y, blockSize.z, 0, nullptr, args, nullptr));
+
+		std::swap(args[0], args[1]);
+	}
 
 	timer.stop();
 
-        for (auto i = 0; i < 5 * 5; i++) {
-                printf("%f; ", dataH[i]);
-        }
+	result += stencilsPerSecond(size, size, timer.getDuration()) / iterationsPerSize;
 
-	std::cout << "\n\n" << timer.getDuration().count() << " us\n";
+	thrust::copy_n(input, size * size, data.raw());
+
+	std::cout << result;
+
+	if (size == 32 + 4) {
+		std::ofstream file("data.txt");
+		file << data;
+		file.close();
+	}
+
+	thrust::device_delete(output, size * size);
+	thrust::device_delete(input, size * size);
 }
-
