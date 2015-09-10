@@ -379,29 +379,33 @@ void test3() {
 	file.close();
 }
 
-void runCpu(boost::program_options::variables_map const& vm) {
-
-}
 
 void runGpu(boost::program_options::variables_map const& vm) {
 	switch (vm["kernel"].as<int>()) {
 	case 6: {
-		auto result = 0;
-		auto size = 32 + 4;
-		auto input = thrust::device_new<float>(size * size);
-		auto output = thrust::device_new<float>(size * size);
+		auto width = vm["width"].as<int>();
+		auto height = vm["height"].as<int>();
+		auto numIterations = vm["numIterations"].as<int>();
+		auto outputfile = vm["output"].as<std::string>();
 
-		Matrix<float> data(size, size);
+		GpuTimer timer_all;
 
-		thrust::copy_n(data.raw(), size * size, input);
-		thrust::copy_n(data.raw(), size * size, output);
+		timer_all.start();
+
+		auto input = thrust::device_new<float>(width * height);
+		auto output = thrust::device_new<float>(width * height);
+
+		Matrix<float> data(width, height);
+
+		thrust::copy_n(data.raw(), width * height, input);
+		thrust::copy_n(data.raw(), width * height, output);
 
 		dim3 blockSize { 16, 16, 1 };
-		dim3 gridSize { (size + blockSize.x - 1 - 4) / blockSize.x, (size + blockSize.y - 1 - 4) / blockSize.y, 1 };
+		dim3 gridSize { (width + blockSize.x - 1 - 4) / blockSize.x, (height + blockSize.y - 1 - 4) / blockSize.y, 1 };
 
-		GpuTimer timer;
+		GpuTimer timer_computation;
 
-		timer.start();
+		timer_computation.start();
 
 		thrust::device_vector<int> weights = std::vector<int> {
 			 0, 0, 1, 0, 0,
@@ -413,91 +417,41 @@ void runGpu(boost::program_options::variables_map const& vm) {
 		
 
 		for (auto i = 0; i < iterationsPerSize; ++i) {
-			//fivePoint3<<<gridSize, blockSize, sizeof(float) * 18 * 18>>>(input, output, size, size);
-			ninePoint1 << <gridSize, blockSize >> >(input, output, size, size, weights.data());
+			ninePoint1 << <gridSize, blockSize >> >(input, output, width, height, weights.data());
 			thrust::swap(input, output);
 		}
 
-		timer.stop();
+		timer_computation.stop();
 
-		result += stencilsPerSecond(size, size, timer.getDuration()) / iterationsPerSize;
+		thrust::copy_n(input, width * height, data.raw());
 
-		thrust::copy_n(input, size * size, data.raw());
-
-		std::cout << result;
-
-		if (size == 32 + 4) {
+		/*if (size == 32 + 4) {
 			std::ofstream file("data.txt");
 			file << data;
 			file.close();
-		}
+		}*/
 
-		thrust::device_delete(output, size * size);
-		thrust::device_delete(input, size * size);
-	}
+		thrust::device_delete(output, width * height);
+		thrust::device_delete(input, width * height);
+
+		timer_all.stop();
+
+		Logger csv;
+		csv.log("Gpu");
+		csv.log("Width", "Height", "Stencils/Seconds (total)", "Stencils/Second (comput)");
+
+		csv.log(width, height, stencilsPerSecond(width, height, timer_all.getDuration()) / numIterations, stencilsPerSecond(width, height, timer_computation.getDuration()) / numIterations);
+		
+		std::ofstream file(outputfile);
+		csv.writeTo(file);
+		file.close();
+	} break;
+	case 7: {
+
+	} break;
 	default:
 		break;
 	}
 }
 
 
-void parseParameters(int argc, char* argv[]) {
-	namespace po = boost::program_options;
-
-	po::options_description general("General Options");
-
-	std::string type;
-
-	general.add_options()
-		("type", po::value<std::string>(&type), "\"cpu\" or \"gpu\"")
-		("width", po::value<size_t>()->default_value(1024), "width of the matrix")
-		("height", po::value<size_t>()->default_value(1024), "height of the matrix")
-		("numIterations", po::value<size_t>()->default_value(50), "number of iterations to calculate")
-		("output", po::value<std::string>()->default_value("output.csv"), "name of the output file")
-	;
-
-	po::options_description gpu("GPU Options");
-
-	gpu.add_options()
-		("kernel", po::value<int>()->default_value(1), "version of the kernel to use")
-	;
-
-	po::options_description all("Usage");
-
-	all.add(general).add(gpu);
-
-	po::variables_map vm;
-	po::store(po::parse_command_line(argc, argv, all), vm);
-	po::notify(vm);
-
-	if (type == "cpu") {
-		runCpu(vm);
-	}
-	else if (type == "gpu") {
-		runGpu(vm);
-	}
-	else {
-		std::cout << "Error: --type must be set to either cpu or gpu.\n\n";
-		std::cout << all << std::endl;
-		//return 0;
-	}
-}
-
-
-using NormalTest = Test<size_t, size_t>;
-
-
-int main(int argc, char* argv[]) {
-	//test2();
-	//test1();
-	//test3();
-
-
-	//NormalTest t1(fivePoint1, dim3(258, 258), dim3(16, 16), 1);
-	//t1.run(258, 258);
-
-	parseParameters(argc, argv);
-
-	std::cout << "so";
-	std::cin.ignore();
-}

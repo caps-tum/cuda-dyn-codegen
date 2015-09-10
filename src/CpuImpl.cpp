@@ -9,6 +9,8 @@
 #include <array>
 #include <functional>
 
+#include <boost/program_options.hpp>
+
 #include "Stencil.h"
 #include "Matrix.h"
 #include "CpuTimer.h"
@@ -31,34 +33,49 @@ struct FivePoint {
 	}
 };
 
-std::array<size_t, 8> sizes { 128, 256, 512, 1024, 2048, 4096, 8192, 16384 }; // , 32768, 65536 };
-std::array<size_t, 8> results;
+//std::array<size_t, 8> sizes { 128, 256, 512, 1024, 2048, 4096, 8192, 16384 }; // , 32768, 65536 };
+//std::array<size_t, 8> results;
 
-size_t iterationsPerSize = 20;
+//size_t iterationsPerSize = 20;
 
-int main() {
+static CpuTimer::duration run(size_t width, size_t height, int numIterations) {
+	Matrix<float> a(width, height), b(width, height);
+
+	FivePoint stencil;
+
+	CpuTimer t;
+
+	t.start();
+
+	for (auto i = 0; i < numIterations; ++i) {
+		stencil(a, b, width, height);
+		swap(a, b);
+	}
+
+	t.stop();
+
+	return t.getDuration();
+}
+
+void runCpu(boost::program_options::variables_map const& vm) {
+	auto width = vm["width"].as<size_t>();
+	auto height = vm["height"].as<size_t>();
+	auto numIterations = vm["numIterations"].as<size_t>();
+	auto output = vm["output"].as<char const*>();
+
+
+}
+
+void runCpuTests() {
 	// jeweils 2x
-	for (auto k = 0; k < 2; ++k) {
+	/*for (auto k = 0; k < 2; ++k) {
 		// für alle Größen
 		for (auto s = 0; s < sizes.size(); ++s) {
 			auto size = sizes[s];
 
-			Matrix<float> a(size, size), b(size, size);
+			auto duration = run(size, size, iterationsPerSize);
 
-			FivePoint stencil;
-
-			CpuTimer t;
-
-			t.start();
-
-			for (auto i = 0; i < iterationsPerSize / 2; ++i) {
-				stencil(a, b, size, size);
-				stencil(b, a, size, size);
-			}
-
-			t.stop();
-
-			results[s] += stencilsPerSecond(size, size, t.getDuration()) / iterationsPerSize;
+			results[s] += stencilsPerSecond(size, size, duration) / iterationsPerSize;
 		}
 	}
 
@@ -74,6 +91,6 @@ int main() {
 
 	ofstream file("cpu-impl.csv");
 	csv.writeTo(file);
-	file.close();
+	file.close();*/
 }
 

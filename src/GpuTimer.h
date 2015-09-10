@@ -8,6 +8,8 @@
 
 class GpuTimer {
 public:
+	using duration = std::chrono::microseconds;
+
 	GpuTimer() {
 		call(cudaEventCreate(&a));
 		call(cudaEventCreate(&b));
@@ -31,12 +33,12 @@ public:
 		call(cudaEventSynchronize(b));
 	}
 
-	std::chrono::microseconds getDuration() {
+	duration getDuration() {
 		float ms;
 
 		call(cudaEventElapsedTime(&ms, a, b));
 
-		return std::chrono::microseconds{static_cast<uint64_t>(1000 * ms)};
+		return duration{static_cast<uint64_t>(1000 * ms)};
 	}
 
 private:
