@@ -22,15 +22,7 @@ public:
 	{
 		std::fill(begin(*this), end(*this), 0.0f);
 
-		for (auto x = 0; x < width; ++x) {
-			(*this)(x, 0) = 1;
-			(*this)(x, height - 1) = 1;
-		}
-
-		for (auto y = 0; y < height; ++y) {
-			(*this)(0, y) = 1;
-			(*this)(width - 1, y) = 1;
-		}
+		addBorder(1);
 	}
 
 	Matrix(Matrix&& m)
@@ -71,6 +63,20 @@ public:
 
 	pointer raw() {
 		return matrix.get();
+	}
+
+	void addBorder(int w) {
+		for (auto i = 0; i < w; ++i) {
+			for (auto x = 0; x < width; ++x) {
+				(*this)(x, i) = 1;
+				(*this)(x, height - i - 1) = 1;
+			}
+
+			for (auto y = 0; y < height; ++y) {
+				(*this)(i, y) = 1;
+				(*this)(width - i - 1, y) = 1;
+			}
+		}
 	}
 
 private:

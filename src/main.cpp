@@ -18,7 +18,8 @@ void parseParameters(int argc, char* argv[]) {
 		("width", po::value<int>()->default_value(4096), "width of the matrix")
 		("height", po::value<int>()->default_value(4096), "height of the matrix")
 		("numIterations", po::value<int>()->default_value(50), "number of iterations to calculate")
-		("output", po::value<std::string>()->default_value("output.csv"), "name of the output file")
+		("csv", po::value<std::string>()->default_value("output.csv"), "name of the csv file")
+		("matrix", po::value<std::string>(), "name of the matrix output file")
 	;
 
 	po::options_description gpu("GPU Options");

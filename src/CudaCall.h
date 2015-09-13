@@ -5,7 +5,7 @@
 
 static void call(cudaError_t error) {
 	if (error != cudaSuccess) {
-		std::cerr << "Cuda Error: " << error << " - " << cudaGetErrorString(error) << "\n";
+		std::cerr << "\nerror: " << error << " - " << cudaGetErrorString(error) << '\n';
 	}
 }
 
@@ -18,8 +18,9 @@ static void call(nvrtcResult result) {
 
 static void call(CUresult result) {
 	if (result != CUDA_SUCCESS) {
-		const char *msg;
+		char const* msg;
 		cuGetErrorName(result, &msg);
+
 		std::cerr << "\nerror: " << result << " failed with error "
 			<< msg << '\n';
 	}
