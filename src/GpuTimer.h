@@ -8,40 +8,39 @@
 
 class GpuTimer {
 public:
-	using duration = std::chrono::microseconds;
+    using duration = std::chrono::microseconds;
 
-	GpuTimer() {
-		call(cudaEventCreate(&a));
-		call(cudaEventCreate(&b));
-	}
+    GpuTimer() {
+        call(cudaEventCreate(&a));
+        call(cudaEventCreate(&b));
+    }
 
-	GpuTimer(GpuTimer const&) = delete;
-	GpuTimer(GpuTimer&&) = delete;
+    GpuTimer(GpuTimer const&) = delete;
+    GpuTimer(GpuTimer&&) = delete;
 
-	~GpuTimer() {
-		call(cudaEventDestroy(b));
-		call(cudaEventDestroy(a));
-	}
+    ~GpuTimer() {
+        call(cudaEventDestroy(b));
+        call(cudaEventDestroy(a));
+    }
 
-	void start() {
-		call(cudaEventRecord(a));
-	}
+    void start() {
+        call(cudaEventRecord(a));
+    }
 
-	void stop() {
-		call(cudaEventRecord(b));
+    void stop() {
+        call(cudaEventRecord(b));
 
-		call(cudaEventSynchronize(b));
-	}
+        call(cudaEventSynchronize(b));
+    }
 
-	duration getDuration() {
-		float ms;
+    duration getDuration() {
+        float ms;
 
-		call(cudaEventElapsedTime(&ms, a, b));
+        call(cudaEventElapsedTime(&ms, a, b));
 
-		return duration{static_cast<uint64_t>(1000 * ms)};
-	}
+        return duration{static_cast<uint64_t>(1000 * ms)};
+    }
 
 private:
-	cudaEvent_t a, b;
+    cudaEvent_t a, b;
 };
-

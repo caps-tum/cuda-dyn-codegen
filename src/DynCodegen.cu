@@ -19,113 +19,113 @@
 #include "Stencil.h"
 #include "Logger.h"
 
-#include "rt_kernel.h"
+#include "kernel_9p_v1_rt.h"
 
 CUfunction compile(char const* src, char const* name) {
-	nvrtcProgram program;
-	call(nvrtcCreateProgram(&program, src, "source.cu", 0, nullptr, nullptr));
+    nvrtcProgram program;
+    call(nvrtcCreateProgram(&program, src, "source.cu", 0, nullptr, nullptr));
 
-	char const* options[] = { "-std=c++11" };
+    char const* options[] = { "-std=c++11" };
 
-	call(nvrtcCompileProgram(program, sizeof(options) / sizeof(options[1]), options));
+    call(nvrtcCompileProgram(program, sizeof(options) / sizeof(options[1]), options));
 
 #ifdef _DEBUG
-	size_t logSize;
-	nvrtcGetProgramLogSize(program, &logSize);
+    size_t logSize;
+    nvrtcGetProgramLogSize(program, &logSize);
 
-	auto log = std::make_unique<char[]>(logSize);
+    auto log = std::make_unique<char[]>(logSize);
 
-	nvrtcGetProgramLog(program, log.get());
+    nvrtcGetProgramLog(program, log.get());
 
-	std::cout << "\n\nLOG:\n" << "====\n" << log.get();
+    std::cout << "\n\nLOG:\n" << "====\n" << log.get();
 #endif
 
-	size_t ptxSize;
-	nvrtcGetPTXSize(program, &ptxSize);
+    size_t ptxSize;
+    nvrtcGetPTXSize(program, &ptxSize);
 
-	auto ptx = std::make_unique<char[]>(ptxSize);
+    auto ptx = std::make_unique<char[]>(ptxSize);
 
-	call(nvrtcGetPTX(program, ptx.get()));
+    call(nvrtcGetPTX(program, ptx.get()));
 
-	call(nvrtcDestroyProgram(&program));
+    call(nvrtcDestroyProgram(&program));
 
-	CUmodule module;
-	call(cuModuleLoadDataEx(&module, ptx.get(), 0, 0, 0));
+    CUmodule module;
+    call(cuModuleLoadDataEx(&module, ptx.get(), 0, 0, 0));
 
-	CUfunction kernel;
-	call(cuModuleGetFunction(&kernel, module, name));
+    CUfunction kernel;
+    call(cuModuleGetFunction(&kernel, module, name));
 
-	return kernel;
+    return kernel;
 }
 
 void runDyn(boost::program_options::variables_map const& vm) {
-	auto width = vm["width"].as<int>();
-	auto height = vm["height"].as<int>();
-	auto numIterations = vm["numIterations"].as<int>();
-	auto csvFile = vm["csv"].as<std::string>();
-	
-	GpuTimer timer_all, timer_computation;
+    auto width = vm["width"].as<int>();
+    auto height = vm["height"].as<int>();
+    auto numIterations = vm["numIterations"].as<int>();
+    auto csvFile = vm["csv"].as<std::string>();
 
-	timer_all.start();
+    GpuTimer timer_all, timer_computation;
 
-	auto src = std::make_unique<char[]>(sizeof(ninePoint1_src) + 100);
-	sprintf(src.get(), ninePoint1_src, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+    timer_all.start();
 
-	auto kernel = compile(src.get(), "ninePoint1");
+    auto src = std::make_unique<char[]>(sizeof(ninePoint1_src) + 100);
+    sprintf(src.get(), ninePoint1_src, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
 
-	auto result = 0;
-	auto input = thrust::device_new<float>(width * height);
-	auto output = thrust::device_new<float>(width * height);
+    auto kernel = compile(src.get(), "ninePoint1");
 
-	Matrix<float> data(width, height);
-	data.addBorder(2);
+    auto result = 0;
+    auto input = thrust::device_new<float>(width * height);
+    auto output = thrust::device_new<float>(width * height);
 
-	thrust::copy_n(data.raw(), width * height, input);
-	thrust::copy_n(data.raw(), width * height, output);
+    Matrix<float> data(width, height);
+    data.addBorder(2);
 
-	dim3 blockSize { 16, 16, 1 };
-	dim3 gridSize { (width + blockSize.x - 1 - 4) / blockSize.x, (height + blockSize.y - 1 - 4) / blockSize.y, 1 };
+    thrust::copy_n(data.raw(), width * height, input);
+    thrust::copy_n(data.raw(), width * height, output);
 
-	auto ip = input.get();
-	auto op = output.get();
+    dim3 blockSize { 16, 16, 1 };
+    dim3 gridSize { (width + blockSize.x - 1 - 4) / blockSize.x, (height + blockSize.y - 1 - 4) / blockSize.y, 1 };
 
-	void* args[] = { &ip, &op, &width, &height };
+    auto ip = input.get();
+    auto op = output.get();
 
-	timer_computation.start();
+    void* args[] = { &ip, &op, &width, &height };
 
-	for (auto i = 0; i < numIterations; ++i) {
-		call(cuLaunchKernel(kernel, gridSize.x, gridSize.y, gridSize.z, blockSize.x, blockSize.y, blockSize.z, 0, nullptr, args, nullptr));
+    timer_computation.start();
 
-		std::swap(args[0], args[1]);
-	}
+    for (auto i = 0; i < numIterations; ++i) {
+        call(cuLaunchKernel(kernel, gridSize.x, gridSize.y, gridSize.z, blockSize.x, blockSize.y, blockSize.z, 0, nullptr, args, nullptr));
 
-	timer_computation.stop();
+        std::swap(args[0], args[1]);
+    }
 
-	thrust::copy_n(input, width * height, data.raw());
+    timer_computation.stop();
 
-	thrust::device_delete(output, width * height);
-	thrust::device_delete(input, width * height);
+    thrust::copy_n(input, width * height, data.raw());
 
-	timer_all.stop();
+    thrust::device_delete(output, width * height);
+    thrust::device_delete(input, width * height);
 
-	Logger csv;
-	csv.log("Dyn");
-	csv.log("Width", "Height", "Stencils/Second (all)", "Stencils/Second (comput)");
+    timer_all.stop();
 
-	auto tAll = stencilsPerSecond(width - 4, height - 4, timer_all.getDuration() / numIterations);
-	auto tComput = stencilsPerSecond(width - 4, height - 4, timer_all.getDuration() / numIterations);
+    Logger csv;
+    csv.log("Dyn");
+    csv.log("Width", "Height", "Stencils/Second (all)", "Stencils/Second (comput)");
 
-	csv.log(width, height, tAll, tComput);
+    auto tAll = stencilsPerSecond(width - 4, height - 4, timer_all.getDuration() / numIterations);
+    auto tComput = stencilsPerSecond(width - 4, height - 4, timer_all.getDuration() / numIterations);
 
-	std::ofstream file(csvFile);
-	csv.writeTo(file);
-	file.close();
+    csv.log(width, height, tAll, tComput);
 
-	if (vm.count("matrix")) {
-		auto matrixFile = vm["matrix"].as<std::string>();
+    std::ofstream file(csvFile);
+    csv.writeTo(file);
+    file.close();
 
-		std::ofstream m(matrixFile);
-		m << data;
-		m.close();
-	}
+    if (vm.count("matrix")) {
+        auto matrixFile = vm["matrix"].as<std::string>();
+
+        std::ofstream m(matrixFile);
+        m << data;
+        m.close();
+    }
 }

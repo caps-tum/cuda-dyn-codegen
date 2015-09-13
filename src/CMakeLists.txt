@@ -11,10 +11,13 @@ set(gpu-impl_SRC
     Logger.h
     main.cpp
     Matrix.h
-    rt_kernel.h
     Stencil.h
-    Test.cu
-    Test.h
+    kernel_5p_v1.cu
+    kernel_5p_v2.cu
+    kernel_5p_v3.cu
+    kernel_5p_v4.cu
+    kernel_9p_v1.cu
+    kernel_9p_v1_rt.h
 )
 
 include_directories(program_options)
@@ -28,4 +31,3 @@ target_link_libraries(gpu-impl "C:/Program Files/NVIDIA GPU Computing Toolkit/CU
 target_link_libraries(gpu-impl "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v7.0/lib/x64/cuda.lib")
 
 target_link_libraries(gpu-impl program_options)
-

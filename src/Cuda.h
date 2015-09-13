@@ -7,26 +7,25 @@
 #include <cuda_runtime.h>
 
 struct Cuda {
-        CUdevice device;
-        CUcontext context;
+    CUdevice device;
+    CUcontext context;
 
-        Cuda() {
-                cuInit(0);
+    Cuda() {
+        cuInit(0);
 
-                cuDeviceGet(&device, 0);
-                cuCtxCreate(&context, 0, device);
-        }
+        cuDeviceGet(&device, 0);
+        cuCtxCreate(&context, 0, device);
+    }
 
-        virtual ~Cuda() {
-                cuCtxDestroy(context);
-        }
+    virtual ~Cuda() {
+        cuCtxDestroy(context);
+    }
 
-        CUdevice& getDevice() {
-                return device;
-        }
+    CUdevice& getDevice() {
+        return device;
+    }
 
-        CUcontext& getContext() {
-                return context;
-        }
+    CUcontext& getContext() {
+        return context;
+    }
 };
-
