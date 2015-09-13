@@ -69,7 +69,7 @@ void runGpu(boost::program_options::variables_map const& vm) {
         csv.log("Width", "Height", "Stencils/Second (all)", "Stencils/Second (comput)");
 
         auto tAll = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
-        auto tComput = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
+        auto tComput = stencilsPerSecond(width - 2, height - 2, timer_computation.getDuration() / numIterations);
 
         csv.log(width, height, tAll, tComput);
 
@@ -113,7 +113,7 @@ void runGpu(boost::program_options::variables_map const& vm) {
         csv.log("Width", "Height", "Stencils/Second (all)", "Stencils/Second (comput)");
 
         auto tAll = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
-        auto tComput = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
+        auto tComput = stencilsPerSecond(width - 2, height - 2, timer_computation.getDuration() / numIterations);
 
         csv.log(width, height, tAll, tComput);
 
@@ -157,7 +157,7 @@ void runGpu(boost::program_options::variables_map const& vm) {
         csv.log("Width", "Height", "Stencils/Second (all)", "Stencils/Second (comput)");
 
         auto tAll = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
-        auto tComput = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
+        auto tComput = stencilsPerSecond(width - 2, height - 2, timer_computation.getDuration() / numIterations);
 
         csv.log(width, height, tAll, tComput);
 
@@ -201,7 +201,7 @@ void runGpu(boost::program_options::variables_map const& vm) {
         csv.log("Width", "Height", "Stencils/Second (all)", "Stencils/Second (comput)");
 
         auto tAll = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
-        auto tComput = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
+        auto tComput = stencilsPerSecond(width - 2, height - 2, timer_computation.getDuration() / numIterations);
 
         csv.log(width, height, tAll, tComput);
 
@@ -257,7 +257,7 @@ void runGpu(boost::program_options::variables_map const& vm) {
         csv.log("Width", "Height", "Stencils/Second (all)", "Stencils/Second (comput)");
 
         auto tAll = stencilsPerSecond(width - 4, height - 4, timer_all.getDuration() / numIterations);
-        auto tComput = stencilsPerSecond(width - 4, height - 4, timer_all.getDuration() / numIterations);
+        auto tComput = stencilsPerSecond(width - 4, height - 4, timer_computation.getDuration() / numIterations);
 
         csv.log(width, height, tAll, tComput);
 
