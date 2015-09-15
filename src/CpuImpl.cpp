@@ -9,6 +9,8 @@
 #include <array>
 #include <functional>
 
+#include <boost/program_options.hpp>
+
 #include "Stencil.h"
 #include "Matrix.h"
 #include "CpuTimer.h"
@@ -16,64 +18,62 @@
 
 using namespace std;
 
-
 struct FivePoint {
-	using Operand = Matrix<float>;
+    using Operand = Matrix<float>;
 
-	Operand& operator()(Operand const& a, Operand& b, size_t width, size_t height) {
-		for (auto y = 1; y < height - 1; ++y) {
-			for (auto x = 1; x < width - 1; ++x) {
-				b(x, y) = 1.0f / 5 * (a(x - 1, y) + a(x, y - 1) + a(x, y) + a(x + 1, y) + a(x, y + 1));
-			}
-		}
+    Operand& operator()(Operand const& a, Operand& b, size_t width, size_t height) {
+        for (auto y = 1; y < height - 1; ++y) {
+            for (auto x = 1; x < width - 1; ++x) {
+                b(x, y) = 1.0f / 5 * (a(x - 1, y) + a(x, y - 1) + a(x, y) + a(x + 1, y) + a(x, y + 1));
+            }
+        }
 
-		return b;
-	}
+        return b;
+    }
 };
 
-std::array<size_t, 5> sizes { 128, 256, 512, 1024, 2048 };
-std::array<size_t, 5> results;
+void runCpu(boost::program_options::variables_map const& vm) {
+    auto width = vm["width"].as<int>();
+    auto height = vm["height"].as<int>();
+    auto numIterations = vm["numIterations"].as<int>();
+    auto csvFile = vm["csv"].as<std::string>();
 
-size_t iterationsPerSize = 20;
+    CpuTimer timer_all, timer_computation;
 
-int main() {
-	// jeweils 2x
-	for (auto k = 0; k < 2; ++k) {
-		// für alle Größen
-		for (auto s = 0; s < sizes.size(); ++s) {
-			auto size = sizes[s];
+    timer_all.start();
 
-			Matrix<float> a(size, size), b(size, size);
+    Matrix<float> a(width, height), b(width, height);
 
-			FivePoint stencil;
+    FivePoint stencil;
 
-			CpuTimer t;
+    timer_computation.start();
 
-			t.start();
+    for (auto i = 0; i < numIterations; ++i) {
+        stencil(a, b, width, height);
+        swap(a, b);
+    }
 
-			for (auto i = 0; i < iterationsPerSize / 2; ++i) {
-				stencil(a, b, size, size);
-				stencil(b, a, size, size);
-			}
+    timer_computation.stop();
+    timer_all.stop();
 
-			t.stop();
+    Logger csv;
+    csv.log("CpuImpl");
+    csv.log("Width", "Height", "NumIterations", "Stencils/Second (all)", "Stencils/Second (comput)");
 
-			results[s] += stencilsPerSecond(size, size, t.getDuration()) / iterationsPerSize;
-		}
-	}
+    auto tAll = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
+    auto tComput = stencilsPerSecond(width - 2, height - 2, timer_computation.getDuration() / numIterations);
 
-	transform(begin(results), end(results), begin(results), [](size_t r) { return r / 2; });
+    csv.log(width, height, numIterations, tAll, tComput);
 
-	Logger csv;
-	csv.log("CpuImpl");
-	csv.log("Size", "Stencils/Second");
+    ofstream file(csvFile);
+    csv.writeTo(file);
+    file.close();
 
-	for (auto i = 0; i < sizes.size(); ++i) {
-		csv.log(sizes[i], results[i]);
-	}
+    if (vm.count("matrix")) {
+        auto matrixFile = vm["matrix"].as<std::string>();
 
-	ofstream file("cpu-impl.csv");
-	csv.writeTo(file);
-	file.close();
+        ofstream m(matrixFile);
+        m << a;
+        m.close();
+    }
 }
-
