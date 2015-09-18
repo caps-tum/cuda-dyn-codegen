@@ -1,3 +1,0 @@
-CpuImpl
-Width;Height;NumIterations;Stencils/Second (all);Stencils/Second (comput)
-100;100;50;480199999;480199999

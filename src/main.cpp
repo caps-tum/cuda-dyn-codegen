@@ -28,9 +28,18 @@ void parseParameters(int argc, char* argv[]) {
         ("kernel", po::value<int>()->default_value(1), "version of the kernel to use")
     ;
 
+	po::options_description dyn("Dyn Options");
+
+	dyn.add_options()
+		("sum", po::value<float>()->default_value(9), "sum of the weights")
+		("stencilWidth", po::value<int>()->default_value(5), "width of the stencil")
+		("stencilHeight", po::value<int>()->default_value(5), "height of the stencil")
+		("stencil", po::value<std::string>()->default_value("0 0 1 0 0 0 0 1 0 0 1 1 1 1 1 0 0 1 0 0 0 0 1 0 0"), "stencil data")
+	;
+
     po::options_description all("Usage");
 
-    all.add(general).add(gpu);
+    all.add(general).add(gpu).add(dyn);
 
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, all), vm);

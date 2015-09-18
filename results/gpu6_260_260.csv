@@ -1,0 +1,3 @@
+Gpu
+Width;Height;Stencils/Second (all);Stencils/Second (comput)
+260;260;1310720000;2048000000

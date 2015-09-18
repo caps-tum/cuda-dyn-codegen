@@ -16,8 +16,8 @@ set(gpu-impl_SRC
     kernel_5p_v2.cu
     kernel_5p_v3.cu
     kernel_5p_v4.cu
+    kernel_5p_v5.cu
     kernel_9p_v1.cu
-    kernel_9p_v1_rt.h
 )
 
 include_directories(program_options)
