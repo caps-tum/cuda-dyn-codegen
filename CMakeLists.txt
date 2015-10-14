@@ -22,6 +22,8 @@ elseif(MAC)
   set(CMAKE_CXX_FLAGS_DEBUG "-std=c++11 -g -D_DEBUG")
   set(CMAKE_CXX_FLAGS_RELEASE "-std=c++11 -O2")
 
+  set(CUDA_HOST_COMPILER "g++")
+  set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++11")
 else()
 endif()
 
