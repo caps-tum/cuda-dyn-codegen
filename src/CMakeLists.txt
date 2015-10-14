@@ -1,4 +1,4 @@
-if(NOT DEFINED MAC)
+if(NOT MAC)
   add_subdirectory(program_options)
 endif()
 
@@ -22,7 +22,7 @@ set(gpu-impl_SRC
     kernel_9p_v1.cu
 )
 
-if(DEFINED MAC)
+if(MAC)
   include_directories($ENV{BOOST_INCDIR})
 else()
   include_directories(program_options)
@@ -30,10 +30,10 @@ endif()
 
 cuda_add_executable(gpu-impl ${gpu-impl_SRC})
 
-if(DEFINED IVY)
+if(IVY)
   target_link_libraries(gpu-impl /usr/local/cuda-7.0/lib64/libnvrtc.so)
   target_link_libraries(gpu-impl program_options)
-elseif(DEFINED MAC)
+elseif(MAC)
   target_link_libraries(gpu-impl /home/hpc/pr87du/di73kos/extr/NVIDIA-Linux-x86_64-346.46/libcuda.so.346.46 /home/hpc/pr87du/di73kos/cuda-7.0/lib64/libnvrtc.so)
   target_link_libraries(gpu-impl $ENV{BOOST_LIBDIR}/libboost_program_options.a)
 else()
