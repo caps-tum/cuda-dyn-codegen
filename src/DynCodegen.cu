@@ -19,6 +19,12 @@
 #include "Stencil.h"
 #include "Logger.h"
 
+#ifndef _WIN32
+#include "make_unique.h"
+#else
+using std::make_unique;
+#endif
+
 CUfunction compile(std::string const& src, char const* name) {
     nvrtcProgram program;
     call(nvrtcCreateProgram(&program, src.data(), "source.cu", 0, nullptr, nullptr));
@@ -31,7 +37,7 @@ CUfunction compile(std::string const& src, char const* name) {
     size_t logSize;
     nvrtcGetProgramLogSize(program, &logSize);
 
-    auto log = std::make_unique<char[]>(logSize);
+    auto log = make_unique<char[]>(logSize);
 
     nvrtcGetProgramLog(program, log.get());
 
@@ -41,7 +47,7 @@ CUfunction compile(std::string const& src, char const* name) {
     size_t ptxSize;
     nvrtcGetPTXSize(program, &ptxSize);
 
-    auto ptx = std::make_unique<char[]>(ptxSize);
+    auto ptx = make_unique<char[]>(ptxSize);
 
     call(nvrtcGetPTX(program, ptx.get()));
 
@@ -56,7 +62,7 @@ CUfunction compile(std::string const& src, char const* name) {
     return kernel;
 }
 
-std::ostringstream generateKernel(int matrixWidth, int sum, int stencilWidth, int stencilHeight, std::string const& stencilData) {
+std::string generateKernel(int matrixWidth, int sum, int stencilWidth, int stencilHeight, std::string const& stencilData) {
 	std::ostringstream kernel;
 
 	auto borderWidth = stencilWidth / 2;
@@ -95,10 +101,10 @@ std::ostringstream generateKernel(int matrixWidth, int sum, int stencilWidth, in
 
 #ifdef _DEBUG
 	std::cout << "Generated source: \n";
-	std::cout << src.str() << std::endl;
+	std::cout << kernel.str() << std::endl;
 #endif
 
-	return kernel;
+	return kernel.str();
 }
 
 
@@ -122,7 +128,7 @@ void runDyn(boost::program_options::variables_map const& vm) {
 
 	auto src = generateKernel(width, sum, stencilWidth, stencilHeight, stencilData);
 
-    auto kernel = compile(src.str(), "kernel");
+    auto kernel = compile(src, "kernel");
 
     auto input = thrust::device_new<float>(width * height);
     auto output = thrust::device_new<float>(width * height);
@@ -131,7 +137,7 @@ void runDyn(boost::program_options::variables_map const& vm) {
 	data.addBorder(borderWidth);
 
     thrust::copy_n(data.raw(), width * height, input);
-    thrust::copy_n(data.raw(), width * height, output);
+    thrust::copy_n(input, width * height, output);
 
     dim3 blockSize { 32, 8, 1 };
 	dim3 gridSize { (width + blockSize.x - 1 - 2 * borderWidth) / blockSize.x, (height + blockSize.y - 1 - 2 * borderHeight) / blockSize.y, 1 };

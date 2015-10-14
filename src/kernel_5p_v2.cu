@@ -6,14 +6,5 @@ __global__ void fivePoint2(thrust::device_ptr<float const> const input, thrust::
 
     auto index = y * width + x;
 
-    auto left = index - 1;
-    auto right = index + 1;
-    auto top = index - width;
-    auto bottom = index + width;
-
-    if (x >= width - 1 || y >= height - 1) {
-        return;
-    }
-
-    output[index] = 1.0f / 5 * (input[top] + input[left] + input[index] + input[right] + input[bottom]);
+    output[index] = 1.0f / 5 * (input[index - width] + input[index - 1] + input[index] + input[index + 1] + input[index + width]);
 }

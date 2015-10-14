@@ -21,6 +21,7 @@ __global__ void fivePoint1(thrust::device_ptr<float const> const input, thrust::
 __global__ void fivePoint2(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, int width, int height);
 __global__ void fivePoint3(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, int global_width, int global_height);
 __global__ void fivePoint4(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, int global_width, int global_height);
+__global__ void fivePoint5(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, int global_width, int global_height);
 __global__ void ninePoint1(thrust::device_ptr<float const> const input, thrust::device_ptr<float> const output, int width);
 
 void runGpu(boost::program_options::variables_map const& vm) {
@@ -83,15 +84,15 @@ void runGpu(boost::program_options::variables_map const& vm) {
     } break;
     case 2: {
         thrust::copy_n(data.raw(), width * height, input);
-        thrust::copy_n(data.raw(), width * height, output);
+		thrust::copy_n(input, width * height, output);
 
-        dim3 blockSize { 16, 16, 1 };
+        dim3 blockSize { 32, 8, 1 };
         dim3 gridSize { (width + blockSize.x - 1 - 2) / blockSize.x, (height + blockSize.y - 1 - 2) / blockSize.y, 1 };
 
         timer_computation.start();
 
-        for (auto i = 0; i < numIterations; ++i) {
-            fivePoint2 << <gridSize, blockSize >> >(input, output, width, height);
+		for (auto i = 0; i < numIterations; ++i) {
+			fivePoint2 << <gridSize, blockSize >> >(input, output, width, height);
             thrust::swap(input, output);
         }
 
@@ -125,7 +126,7 @@ void runGpu(boost::program_options::variables_map const& vm) {
     } break;
     case 3: {
         thrust::copy_n(data.raw(), width * height, input);
-        thrust::copy_n(data.raw(), width * height, output);
+        thrust::copy_n(input, width * height, output);
 
         dim3 blockSize { 32, 8, 1 };
         dim3 gridSize { (width + blockSize.x - 1 - 2) / blockSize.x, (height + blockSize.y - 1 - 2) / blockSize.y, 1 };
@@ -167,7 +168,7 @@ void runGpu(boost::program_options::variables_map const& vm) {
     } break;
     case 4: {
         thrust::copy_n(data.raw(), width * height, input);
-        thrust::copy_n(data.raw(), width * height, output);
+        thrust::copy_n(input, width * height, output);
 
         dim3 blockSize { 32, 8, 1 };
         dim3 gridSize { (width + blockSize.x - 1 - 2) / blockSize.x, (height + blockSize.y - 1 - 2) / blockSize.y, 1 };
@@ -208,13 +209,52 @@ void runGpu(boost::program_options::variables_map const& vm) {
         }
     } break;
     case 5: {
+		thrust::copy_n(data.raw(), width * height, input);
+		thrust::copy_n(input, width * height, output);
 
+		dim3 blockSize { 32, 3, 1 };
+		dim3 gridSize { (width + blockSize.x - 1 - 2) / blockSize.x, (height + blockSize.y - 1 - 2) / blockSize.y, 1 };
+
+		timer_computation.start();
+
+		for (auto i = 0; i < numIterations; ++i) {
+			fivePoint5 << <gridSize, blockSize >> >(input, output, width, height);
+			thrust::swap(input, output);
+		}
+
+		timer_computation.stop();
+
+		thrust::copy_n(input, width * height, data.raw());
+
+		thrust::device_delete(output, width * height);
+		thrust::device_delete(input, width * height);
+
+		timer_all.stop();
+
+		Logger csv;
+		csv.log("Gpu");
+		csv.log("Width", "Height", "Stencils/Second (all)", "Stencils/Second (comput)");
+
+		auto tAll = stencilsPerSecond(width - 2, height - 2, timer_all.getDuration() / numIterations);
+		auto tComput = stencilsPerSecond(width - 2, height - 2, timer_computation.getDuration() / numIterations);
+
+		csv.log(width, height, tAll, tComput);
+
+		std::ofstream file(csvFile);
+		csv.writeTo(file);
+		file.close();
+
+		if (vm.count("matrix")) {
+			std::ofstream m(vm["matrix"].as<std::string>());
+			m << data;
+			m.close();
+		}
     } break;
     case 6: {
         data.addBorder(2);
 
         thrust::copy_n(data.raw(), width * height, input);
-        thrust::copy_n(data.raw(), width * height, output);
+        thrust::copy_n(input, width * height, output);
 
         dim3 blockSize { 32, 8, 1 };
         dim3 gridSize { (width + blockSize.x - 1 - 4) / blockSize.x, (height + blockSize.y - 1 - 4) / blockSize.y, 1 };

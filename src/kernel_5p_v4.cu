@@ -11,13 +11,13 @@ __global__ void fivePoint4(thrust::device_ptr<float const> const input, thrust::
     auto global_top = global_index - global_width;
     auto global_bottom = global_index + global_width;
 
-    __shared__ float buffer[18][18];
+    __shared__ float buffer[34][10];
 
     auto buffer_x = threadIdx.x + 1;
     auto buffer_y = threadIdx.y + 1;
 
-    auto buffer_width = 18;
-    auto buffer_height = 18;
+    auto buffer_width = 34;
+    auto buffer_height = 10;
 
     if (threadIdx.x == 0) {
         buffer[0][buffer_y] = input[global_left];
