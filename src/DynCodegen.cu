@@ -19,11 +19,15 @@
 #include "Stencil.h"
 #include "Logger.h"
 
-#include "kernel_9p_v1_rt.h"
+#ifndef _WIN32
+#include "make_unique.h"
+#else
+using std::make_unique;
+#endif
 
-CUfunction compile(char const* src, char const* name) {
+CUfunction compile(std::string const& src, char const* name) {
     nvrtcProgram program;
-    call(nvrtcCreateProgram(&program, src, "source.cu", 0, nullptr, nullptr));
+    call(nvrtcCreateProgram(&program, src.data(), "source.cu", 0, nullptr, nullptr));
 
     char const* options[] = { "-std=c++11" };
 
@@ -33,7 +37,7 @@ CUfunction compile(char const* src, char const* name) {
     size_t logSize;
     nvrtcGetProgramLogSize(program, &logSize);
 
-    auto log = std::make_unique<char[]>(logSize);
+    auto log = make_unique<char[]>(logSize);
 
     nvrtcGetProgramLog(program, log.get());
 
@@ -43,7 +47,7 @@ CUfunction compile(char const* src, char const* name) {
     size_t ptxSize;
     nvrtcGetPTXSize(program, &ptxSize);
 
-    auto ptx = std::make_unique<char[]>(ptxSize);
+    auto ptx = make_unique<char[]>(ptxSize);
 
     call(nvrtcGetPTX(program, ptx.get()));
 
@@ -58,38 +62,90 @@ CUfunction compile(char const* src, char const* name) {
     return kernel;
 }
 
+std::string generateKernel(int matrixWidth, int sum, int stencilWidth, int stencilHeight, std::string const& stencilData) {
+	std::ostringstream kernel;
+
+	auto borderWidth = stencilWidth / 2;
+	auto borderHeight = stencilHeight / 2;
+
+	std::istringstream weights(stencilData);
+
+	kernel
+		<< "extern \"C\" __global__ void kernel(float const* input, float* output) { \n"
+		<< "	auto x = blockIdx.x * blockDim.x + threadIdx.x + " << borderWidth << "; \n"
+		<< "	auto y = blockIdx.y * blockDim.y + threadIdx.y + " << borderHeight << "; \n"
+		<< "\n"
+		<< "	auto index = y * " << matrixWidth << " + x; \n"
+		<< "\n"
+		;
+
+	kernel
+		<< "output[index] = 1.0f / " << sum << " * (";
+
+	for (auto y = 0; y < stencilHeight; ++y) {
+		for (auto x = 0; x < stencilWidth; ++x) {
+			float w;
+			weights >> w;
+
+			// Sollte passen, weil beim Einlesen ein "0" ja hoffentlich in exakt 0.f umgewandelt wird.
+			if (w != 0) {
+				kernel
+					<< w << " * input[index + " << (-stencilHeight / 2 + y) * matrixWidth << " + " << -stencilWidth / 2 + x << "] + \n";
+			}
+		}
+	}
+
+	kernel 
+		<< " 0); \n"
+		<< "} \n";
+
+#ifdef _DEBUG
+	std::cout << "Generated source: \n";
+	std::cout << kernel.str() << std::endl;
+#endif
+
+	return kernel.str();
+}
+
+
 void runDyn(boost::program_options::variables_map const& vm) {
     auto width = vm["width"].as<int>();
     auto height = vm["height"].as<int>();
     auto numIterations = vm["numIterations"].as<int>();
     auto csvFile = vm["csv"].as<std::string>();
 
+	auto sum = vm["sum"].as<float>();
+	auto stencilWidth = vm["stencilWidth"].as<int>();
+	auto stencilHeight = vm["stencilHeight"].as<int>();
+	auto stencilData = vm["stencil"].as<std::string>();
+
+	auto borderWidth = stencilWidth / 2;
+	auto borderHeight = stencilHeight / 2;
+
     GpuTimer timer_all, timer_computation;
 
     timer_all.start();
 
-    auto src = std::make_unique<char[]>(sizeof(ninePoint1_src) + 100);
-    sprintf(src.get(), ninePoint1_src, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+	auto src = generateKernel(width, sum, stencilWidth, stencilHeight, stencilData);
 
-    auto kernel = compile(src.get(), "ninePoint1");
+    auto kernel = compile(src, "kernel");
 
-    auto result = 0;
     auto input = thrust::device_new<float>(width * height);
     auto output = thrust::device_new<float>(width * height);
 
     Matrix<float> data(width, height);
-    data.addBorder(2);
+	data.addBorder(borderWidth);
 
     thrust::copy_n(data.raw(), width * height, input);
-    thrust::copy_n(data.raw(), width * height, output);
+    thrust::copy_n(input, width * height, output);
 
-    dim3 blockSize { 16, 16, 1 };
-    dim3 gridSize { (width + blockSize.x - 1 - 4) / blockSize.x, (height + blockSize.y - 1 - 4) / blockSize.y, 1 };
+    dim3 blockSize { 32, 8, 1 };
+	dim3 gridSize { (width + blockSize.x - 1 - 2 * borderWidth) / blockSize.x, (height + blockSize.y - 1 - 2 * borderHeight) / blockSize.y, 1 };
 
     auto ip = input.get();
     auto op = output.get();
 
-    void* args[] = { &ip, &op, &width, &height };
+	void* args[] = { &ip, &op };
 
     timer_computation.start();
 
@@ -112,8 +168,8 @@ void runDyn(boost::program_options::variables_map const& vm) {
     csv.log("Dyn");
     csv.log("Width", "Height", "Stencils/Second (all)", "Stencils/Second (comput)");
 
-    auto tAll = stencilsPerSecond(width - 4, height - 4, timer_all.getDuration() / numIterations);
-    auto tComput = stencilsPerSecond(width - 4, height - 4, timer_all.getDuration() / numIterations);
+	auto tAll = stencilsPerSecond(width - 2 * borderWidth, height - 2 * borderHeight, timer_all.getDuration() / numIterations);
+	auto tComput = stencilsPerSecond(width - 2 * borderWidth, height - 2 * borderHeight, timer_computation.getDuration() / numIterations);
 
     csv.log(width, height, tAll, tComput);
 

@@ -16,8 +16,8 @@ __global__ void fivePoint3(thrust::device_ptr<float const> const input, thrust::
     auto buffer_x = threadIdx.x + 1;
     auto buffer_y = threadIdx.y + 1;
 
-    auto buffer_width = 18;
-    auto buffer_height = 18;
+    auto buffer_width = 34;
+    auto buffer_height = 10;
 
     int buffer_index = buffer_y * buffer_width + buffer_x;
 
@@ -43,6 +43,7 @@ __global__ void fivePoint3(thrust::device_ptr<float const> const input, thrust::
     if (threadIdx.y == buffer_height - 3) {
         buffer[buffer_bottom] = input[global_bottom];
     }
+
     __syncthreads();
 
     output[global_index] = 1.0f / 5 * (buffer[buffer_top] + buffer[buffer_left] + buffer[buffer_index] + buffer[buffer_right] + buffer[buffer_bottom]);
